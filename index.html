@@ -2717,10 +2717,15 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             console.log("Button clicked for provider:", provider); // <--- Add this line
             sound.playSelect();
 
-            // 1. Use REAL Firebase Popup for Google
-            if (firebaseAuth && provider === 'Google') {
+            // FORCE REAL FIREBASE FOR GOOGLE
+            if (provider === 'Google') {
+                console.log("Real Google Firebase Auth Triggered");
+                if (!firebaseAuth) {
+                    showToast('Firebase Auth is not initialized. Check your firebaseConfig keys.');
+                    return;
+                }
                 if (window.location.protocol === 'file:') {
-                    showToast('Deploy to Vercel or use localhost to open real Google popups!');
+                    showToast('Real Google popups require http://localhost or Vercel deployment!');
                     return;
                 }
                 try {
