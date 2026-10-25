@@ -2714,6 +2714,7 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
 
         // Real Google, Microsoft & Apple OAuth Sign-In via Firebase
         window.handleSocialSignIn = async function(provider) {
+            console.log("Button clicked for provider:", provider); // <--- Add this line
             sound.playSelect();
 
             // 1. Use REAL Firebase Popup for Google
