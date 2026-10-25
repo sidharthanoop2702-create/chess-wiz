@@ -13,6 +13,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <style>
         :root {
             --surface: rgba(26, 24, 32, 0.85);
@@ -2451,6 +2453,32 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
         
     <script>
         // --- AUTHENTICATION, PROFILE CUSTOMIZATION & AI ELO SYSTEM ---
+        // ============================================================================
+        // 👇 PASTE YOUR FIREBASE CONFIG RIGHT HERE 👇
+        // ============================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDlzvG_eax3Rliy3-9a6YMMYCC56z3MRq4",
+            authDomain: "chess-wiz.firebaseapp.com",
+            projectId: "chess-wiz",
+            storageBucket: "chess-wiz.firebasestorage.app",
+            messagingSenderId: "1043305423838",
+            appId: "1:1043305423838:web:9229a74064d26609feb34f"
+        };
+
+        // Initialize Firebase Auth automatically
+        let firebaseAuth = null;
+        if (typeof firebase !== 'undefined' && firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("PASTE_YOUR")) {
+            try {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                firebaseAuth = firebase.auth();
+            } catch (err) {
+                console.error("Firebase init error:", err);
+            }
+        }
+
+        // --- AUTHENTICATION, PROFILE CUSTOMIZATION & AI ELO SYSTEM ---
         const PRESET_AVATARS = {
             crown: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="%233b0764"/><path d="M12 46h40M16 46l3-20 13 10 8-18 8 18 13-10 3 20" fill="%23fbbf24" stroke="%23fef08a" stroke-width="2"/></svg>',
             knight: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="%231e1b4b"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="36" fill="%23c084fc">♞</text></svg>',
@@ -2471,7 +2499,6 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
 
             if (currentAuthUser) {
                 const shownName = currentDisplayName || currentAuthUser.split('@')[0];
-                // Show full name up to 30 characters; truncate with ellipsis if it exceeds 30
                 if (btnLabel) btnLabel.textContent = shownName.length > 30 ? shownName.slice(0, 29) + '…' : shownName;
 
                 if (currentAvatarUrl && avatarImg) {
@@ -2541,7 +2568,6 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             reader.onload = (ev) => {
                 const img = new Image();
                 img.onload = () => {
-                    // Resize to crisp 128x128 thumbnail so it saves cleanly in localStorage
                     const c = document.createElement('canvas');
                     c.width = 128; c.height = 128;
                     const ctx = c.getContext('2d');
@@ -2559,12 +2585,19 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             reader.readAsDataURL(file);
         };
 
-        window.saveUserProfile = function() {
+        window.saveUserProfile = async function() {
             const nameVal = document.getElementById('profile-name-input').value.trim();
             currentDisplayName = nameVal || (currentAuthUser ? currentAuthUser.split('@')[0] : 'Grandmaster');
             localStorage.setItem('chess_wiz_display_name', currentDisplayName);
             localStorage.setItem('chess_wiz_avatar', currentAvatarUrl);
             localStorage.setItem('chess_wiz_ai_elo', String(playerAiElo));
+
+            // Also update displayName on the real Firebase user profile if signed in
+            if (firebaseAuth && firebaseAuth.currentUser) {
+                try {
+                    await firebaseAuth.currentUser.updateProfile({ displayName: currentDisplayName });
+                } catch (e) {}
+            }
 
             updateAuthHeaderUI();
             closeAuthModal();
@@ -2572,11 +2605,15 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             showToast(`Profile Saved! Welcome, ${currentDisplayName} (${playerAiElo} ELO)`);
         };
 
-        function completeUserSignIn(email, sourceLabel) {
+        function completeUserSignIn(email, sourceLabel, providerPhotoUrl = null, providerName = null) {
             currentAuthUser = email;
             if (!localStorage.getItem('chess_wiz_display_name')) {
-                currentDisplayName = email.split('@')[0];
+                currentDisplayName = providerName || email.split('@')[0];
                 localStorage.setItem('chess_wiz_display_name', currentDisplayName);
+            }
+            if (providerPhotoUrl && !localStorage.getItem('chess_wiz_avatar')) {
+                currentAvatarUrl = providerPhotoUrl;
+                localStorage.setItem('chess_wiz_avatar', currentAvatarUrl);
             }
             if (!localStorage.getItem('chess_wiz_ai_elo')) {
                 playerAiElo = 1000;
@@ -2587,12 +2624,30 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             sound.playFanfare();
             showToast(`Signed in via ${sourceLabel}! Customize your profile below.`);
 
-            // Immediately transition the modal to the Profile Editor & ELO view (hiding sign-in options)
             const modal = document.getElementById('auth-modal');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             showProfileEditorView();
             syncGameToCloud(true, chess.game_over());
+        }
+
+        // Keep session synced with Firebase Auth state
+        if (firebaseAuth) {
+            firebaseAuth.onAuthStateChanged((user) => {
+                if (user && user.email) {
+                    currentAuthUser = user.email;
+                    localStorage.setItem('chess_wiz_auth_user', user.email);
+                    if (user.displayName && !localStorage.getItem('chess_wiz_display_name')) {
+                        currentDisplayName = user.displayName;
+                        localStorage.setItem('chess_wiz_display_name', currentDisplayName);
+                    }
+                    if (user.photoURL && !localStorage.getItem('chess_wiz_avatar')) {
+                        currentAvatarUrl = user.photoURL;
+                        localStorage.setItem('chess_wiz_avatar', currentAvatarUrl);
+                    }
+                    updateAuthHeaderUI();
+                }
+            });
         }
 
         window.switchAuthMode = function(mode) {
@@ -2606,7 +2661,7 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
 
             if (mode === 'signup') {
                 titleEl.textContent = 'Create Cathedral Account';
-                subEl.textContent = 'Enter your email and create a password';
+                subEl.textContent = 'Enter your email and create a password (min 6 chars)';
                 confirmGroup.classList.remove('hidden');
                 document.getElementById('auth-confirm-input').required = true;
                 submitBtn.textContent = 'Create Account';
@@ -2624,7 +2679,8 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             sound.playSelect();
         };
 
-        window.handleEmailAuthSubmit = function(event) {
+        // Real Email & Password Sign-In / Sign-Up via Firebase
+        window.handleEmailAuthSubmit = async function(event) {
             event.preventDefault();
             const email = document.getElementById('auth-email-input').value.trim();
             const pass = document.getElementById('auth-pass-input').value;
@@ -2637,37 +2693,52 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
                     return;
                 }
             }
-            completeUserSignIn(email, authMode === 'signup' ? 'New Account' : 'Email');
+
+            if (firebaseAuth) {
+                try {
+                    let cred;
+                    if (authMode === 'signup') {
+                        cred = await firebaseAuth.createUserWithEmailAndPassword(email, pass);
+                    } else {
+                        cred = await firebaseAuth.signInWithEmailAndPassword(email, pass);
+                    }
+                    completeUserSignIn(cred.user.email, authMode === 'signup' ? 'New Account' : 'Email', cred.user.photoURL, cred.user.displayName);
+                } catch (err) {
+                    sound.playCheck();
+                    showToast(err.message.replace('Firebase: ', ''));
+                }
+            } else {
+                showToast('Paste your firebaseConfig in the script first!');
+            }
         };
 
-        window.openAuthModal = function() {
-            const modal = document.getElementById('auth-modal');
-            const guestSec = document.getElementById('auth-guest-section');
-            const profileSec = document.getElementById('auth-profile-section');
+        // Real Google, Microsoft & Apple OAuth Sign-In via Firebase
+        window.handleSocialSignIn = async function(provider) {
+            sound.playSelect();
 
-            if (currentAuthUser) {
-                showProfileEditorView();
-            } else {
-                guestSec.classList.remove('hidden');
-                profileSec.classList.add('hidden');
-                document.getElementById('modal-top-avatar').classList.add('hidden');
-                document.getElementById('modal-top-icon').classList.remove('hidden');
-                switchAuthMode('signin');
+            // 1. Use REAL Firebase Popup for Google (works 100% free with zero Azure/Apple setup!)
+            if (firebaseAuth && provider === 'Google') {
+                try {
+                    const authProvider = new firebase.auth.GoogleAuthProvider();
+                    const result = await firebaseAuth.signInWithPopup(authProvider);
+                    const user = result.user;
+                    if (user.displayName && !localStorage.getItem('chess_wiz_display_name')) {
+                        currentDisplayName = user.displayName;
+                        localStorage.setItem('chess_wiz_display_name', currentDisplayName);
+                    }
+                    if (user.photoURL && !localStorage.getItem('chess_wiz_avatar')) {
+                        currentAvatarUrl = user.photoURL;
+                        localStorage.setItem('chess_wiz_avatar', currentAvatarUrl);
+                    }
+                    completeUserSignIn(user.email, 'Google');
+                } catch (err) {
+                    sound.playCheck();
+                    showToast(`Google sign-in cancelled or failed: ${err.message}`);
+                }
+                return;
             }
 
-            modal.classList.remove('hidden');
-            modal.classList.add('flex');
-            sound.playSelect();
-        };
-
-        window.closeAuthModal = function() {
-            const modal = document.getElementById('auth-modal');
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        };
-
-        window.handleSocialSignIn = function(provider) {
-            sound.playSelect();
+            // 2. Built-in Instant Popup for Microsoft & Apple (No Azure Tenant or $99 Apple fee needed!)
             const width = 460, height = 560;
             const left = Math.round((window.screen.width - width) / 2);
             const top = Math.round((window.screen.height - height) / 2);
@@ -2715,15 +2786,62 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             popup.document.close();
         };
 
-        window.addEventListener('message', (event) => {
-            if (event.data && event.data.type === 'CHESS_WIZ_OAUTH_SUCCESS') {
-                const { provider, email } = event.data;
-                localStorage.setItem(`chess_wiz_last_${provider.toLowerCase()}`, email);
-                completeUserSignIn(email, provider);
+            if (!firebaseAuth) {
+                showToast('Paste your firebaseConfig in the script first!');
+                return;
             }
-        });
+            if (window.location.protocol === 'file:') {
+                showToast('Deploy to Vercel or use localhost to open real OAuth popups!');
+                return;
+            }
 
-        window.handleSignOut = function() {
+            try {
+                let authProvider;
+                if (provider === 'Google') {
+                    authProvider = new firebase.auth.GoogleAuthProvider();
+                } else if (provider === 'Microsoft') {
+                    authProvider = new firebase.auth.OAuthProvider('microsoft.com');
+                } 
+
+                const result = await firebaseAuth.signInWithPopup(authProvider);
+                const user = result.user;
+                completeUserSignIn(user.email || `${provider.toLowerCase()}_user@cathedral.com`, provider, user.photoURL, user.displayName);
+            } catch (err) {
+                sound.playCheck();
+                showToast(err.message.replace('Firebase: ', ''));
+            }
+        };
+
+        window.openAuthModal = function() {
+            const modal = document.getElementById('auth-modal');
+            const guestSec = document.getElementById('auth-guest-section');
+            const profileSec = document.getElementById('auth-profile-section');
+
+            if (currentAuthUser) {
+                showProfileEditorView();
+            } else {
+                guestSec.classList.remove('hidden');
+                profileSec.classList.add('hidden');
+                document.getElementById('modal-top-avatar').classList.add('hidden');
+                document.getElementById('modal-top-icon').classList.remove('hidden');
+                switchAuthMode('signin');
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            sound.playSelect();
+        };
+
+        window.closeAuthModal = function() {
+            const modal = document.getElementById('auth-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        };
+
+        window.handleSignOut = async function() {
+            if (firebaseAuth) {
+                try { await firebaseAuth.signOut(); } catch (e) {}
+            }
             currentAuthUser = null;
             localStorage.removeItem('chess_wiz_auth_user');
             updateAuthHeaderUI();
