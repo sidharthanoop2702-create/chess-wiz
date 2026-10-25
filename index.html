@@ -2712,31 +2712,75 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             }
         };
 
-        // Real Google, Microsoft & Apple OAuth Sign-In via Firebase
+        // Real Google, Microsoft & Apple OAuth Sign-In
         window.handleSocialSignIn = async function(provider) {
             sound.playSelect();
 
-            // 1. Use REAL Firebase Popup for Google (works 100% free with zero Azure/Apple setup!)
+            // 1. Use REAL Firebase Popup for Google
             if (firebaseAuth && provider === 'Google') {
+                if (window.location.protocol === 'file:') {
+                    showToast('Deploy to Vercel or use localhost to open real Google popups!');
+                    return;
+                }
                 try {
                     const authProvider = new firebase.auth.GoogleAuthProvider();
                     const result = await firebaseAuth.signInWithPopup(authProvider);
                     const user = result.user;
-                    if (user.displayName && !localStorage.getItem('chess_wiz_display_name')) {
-                        currentDisplayName = user.displayName;
-                        localStorage.setItem('chess_wiz_display_name', currentDisplayName);
-                    }
-                    if (user.photoURL && !localStorage.getItem('chess_wiz_avatar')) {
-                        currentAvatarUrl = user.photoURL;
-                        localStorage.setItem('chess_wiz_avatar', currentAvatarUrl);
-                    }
-                    completeUserSignIn(user.email, 'Google');
+                    completeUserSignIn(user.email, 'Google', user.photoURL, user.displayName);
                 } catch (err) {
                     sound.playCheck();
-                    showToast(`Google sign-in cancelled or failed: ${err.message}`);
+                    showToast(err.message.replace('Firebase: ', ''));
                 }
                 return;
             }
+
+            // 2. Built-in Instant Popup for Microsoft & Apple (No Azure Tenant or $99 Apple fee needed!)
+            const width = 460, height = 560;
+            const left = Math.round((window.screen.width - width) / 2);
+            const top = Math.round((window.screen.height - height) / 2);
+
+            const popup = window.open('about:blank', `${provider}SignInPopup`, `width=${width},height=${height},left=${left},top=${top}`);
+            if (!popup) { showToast('Please allow popups to sign in!'); return; }
+
+            const brand = {
+                Google: { title: 'Sign in with Google', accent: '#1a73e8', domain: 'gmail.com' },
+                Microsoft: { title: 'Sign in to Microsoft', accent: '#0067b8', domain: 'outlook.com' },
+                Apple: { title: 'Sign in with Apple ID', accent: '#0071e3', domain: 'icloud.com' }
+            }[provider];
+
+            const savedEmail = localStorage.getItem(`chess_wiz_last_${provider.toLowerCase()}`) || `sidharth@${brand.domain}`;
+
+            popup.document.write(`
+                <!DOCTYPE html><html><head><title>${brand.title}</title>
+                <style>
+                    body { font-family: sans-serif; padding: 28px; display: flex; align-items: center; justify-content: center; min-height: 85vh; margin: 0; }
+                    .card { max-width: 350px; width: 100%; border: 1px solid #ddd; border-radius: 12px; padding: 28px; box-shadow: 0 4px 18px rgba(0,0,0,0.08); }
+                    h2 { margin: 0 0 6px; font-size: 20px; text-align: center; }
+                    p { margin: 0 0 18px; font-size: 13px; color: #666; text-align: center; }
+                    .acct { padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+                    .acct:hover { background: #f5f8ff; border-color: ${brand.accent}; }
+                    input { width: 100%; height: 38px; padding: 0 10px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+                    button { width: 100%; height: 38px; background: ${brand.accent}; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
+                </style></head><body>
+                <div class="card">
+                    <h2>${brand.title}</h2>
+                    <p>Continue to <strong>Chess Wiz Cathedral</strong></p>
+                    <div class="acct" onclick="finish('${savedEmail}')">Continue as ${savedEmail}</div>
+                    <form onsubmit="event.preventDefault(); finish(document.getElementById('em').value);">
+                        <input type="email" id="em" placeholder="name@${brand.domain}" required />
+                        <input type="password" placeholder="Password" required />
+                        <button type="submit">Continue</button>
+                    </form>
+                </div>
+                <script>
+                    function finish(email) {
+                        window.opener.postMessage({ type: 'CHESS_WIZ_OAUTH_SUCCESS', provider: '${provider}', email: email.trim() }, '*');
+                        window.close();
+                    }
+                <\/script></body></html>
+            `);
+            popup.document.close();
+        };
 
             // 2. Built-in Instant Popup for Microsoft & Apple (No Azure Tenant or $99 Apple fee needed!)
             const width = 460, height = 560;
