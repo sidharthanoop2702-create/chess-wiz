@@ -2115,32 +2115,11 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             }
         };
 
-        window.openStartMenu = function() {
-            isStartMenuOpen = true;
-            clearTimeout(menuHideTimeout);
-            resetStartMenuSubpanels();
-            syncDifficultyUI(); syncSoundUI();
-
-            const overlay = document.getElementById('start-menu-overlay');
-            overlay.style.display = 'flex';
-            overlay.classList.remove('hidden', 'opacity-0', 'pointer-events-none');
-
-            document.getElementById('top-hud-bar').classList.remove('hud-visible');
-            document.getElementById('top-hud-bar').classList.add('hud-top-hidden');
-            document.getElementById('bottom-dock-nav').classList.remove('hud-visible');
-            document.getElementById('bottom-dock-nav').classList.add('hud-hidden');
-            document.getElementById('puzzle-banner').classList.add('hidden');
-
-            document.getElementById('btn-resume-match').classList.toggle('hidden', !hasStartedMatchOnce);
-        };
-
-        let lastPlayedPuzzleKey = null;
-
         function restartMatchWithAnimation() {
             currentMoveAnim = null; isAnimating = false; hintsRemaining = 5; undosRemaining = MAX_UNDOS_PER_MATCH;
             clearOracleHintVisuals();
             if (gameMode === 'puzzles') {
-                WIZARD_PUZZLES = PUZZLE_TIERS[puzzleDifficulty] || PUZZLE_TIERS.apprentice;
+                WIZARD_PUZZLES = buildActivePuzzlesForTier(puzzleDifficulty);
                 const currentKey = `${puzzleDifficulty}-${currentPuzzleIndex}`;
                 // If this exact puzzle was just played, automatically advance to a different one
                 if (lastPlayedPuzzleKey === currentKey && WIZARD_PUZZLES.length > 1) {
@@ -2787,6 +2766,14 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             `);
             popup.document.close();
         };
+        
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'CHESS_WIZ_OAUTH_SUCCESS') {
+                const { provider, email } = event.data;
+                localStorage.setItem(`chess_wiz_last_${provider.toLowerCase()}`, email);
+                completeUserSignIn(email, provider);
+            }
+        });
 
         window.openAuthModal = function() {
             const modal = document.getElementById('auth-modal');
