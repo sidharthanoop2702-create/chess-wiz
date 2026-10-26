@@ -2691,49 +2691,64 @@ const lightSquareBaseMat = new THREE.MeshStandardMaterial({
             }
         };
 
-        // 1. DEDICATED REAL FIREBASE GOOGLE SIGN-IN (Never opens about:blank!)
-        window.handleGoogleFirebaseSignIn = async function() {
+        // Real Google OAuth via Firebase (Fake Google popup 100% deleted!)
+        window.handleSocialSignIn = async function(provider) {
             sound.playSelect();
-            if (!firebaseAuth) {
-                showToast('Firebase Auth is not initialized!');
-                return;
-            }
-            if (window.location.protocol === 'file:') {
-                showToast('Open via your Vercel link or localhost to use real Google Sign-In!');
-                return;
-            }
-            try {
+
+            if (provider === 'Google') {
+                // Check 1: Did Ulaa Browser's ad/tracker shield block the Firebase script?
+                if (typeof firebase === 'undefined') {
+                    alert('Your browser (Ulaa Shield / Adblocker) blocked the Google Firebase script! Click the green shield icon in your address bar and turn it OFF for this site, then refresh.');
+                    return;
+                }
+                // Check 2: Initialize Firebase on the spot if it wasn't initialized yet
+                if (!firebaseAuth) {
+                    try {
+                        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+                        firebaseAuth = firebase.auth();
+                    } catch (e) {
+                        alert('Firebase init error: ' + e.message);
+                        return;
+                    }
+                }
+                // Check 3: Make sure it's not opened as a local file://
+                if (window.location.protocol === 'file:') {
+                    alert('You are opening this file from your computer (file://). Please open your https://...vercel.app link to use Google Sign-In!');
+                    return;
+                }
+
+                // Launch REAL Google Sign-In
                 const authProvider = new firebase.auth.GoogleAuthProvider();
                 authProvider.setCustomParameters({ prompt: 'select_account' });
-                const result = await firebaseAuth.signInWithPopup(authProvider);
-                const user = result.user;
-                completeUserSignIn(user.email, 'Google', user.photoURL, user.displayName);
-            } catch (err) {
-                console.error("Firebase Google Auth Error:", err);
-                sound.playCheck();
-                showToast(err.message.replace('Firebase: ', ''));
+                try {
+                    const result = await firebaseAuth.signInWithPopup(authProvider);
+                    const user = result.user;
+                    completeUserSignIn(user.email, 'Google', user.photoURL, user.displayName);
+                } catch (err) {
+                    // If Ulaa blocks the popup, automatically fall back to full-page Google redirect!
+                    if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+                        await firebaseAuth.signInWithRedirect(authProvider);
+                    } else {
+                        alert('Firebase Google Error: ' + err.message);
+                    }
+                }
+                return;
             }
-        };
 
-        // 2. SIMULATED POPUP ONLY FOR MICROSOFT & APPLE
-        window.handleSocialSignIn = async function(provider) {
-            if (provider === 'Google') return window.handleGoogleFirebaseSignIn();
-            sound.playSelect();
-
-            const width = 460, height = 560;
-            const left = Math.round((window.screen.width - width) / 2);
-            const top = Math.round((window.screen.height - height) / 2);
-
-            const popup = window.open('about:blank', `${provider}SignInPopup`, `width=${width},height=${height},left=${left},top=${top}`);
-            if (!popup) { showToast('Please allow popups to sign in!'); return; }
-
+            // Built-in popup ONLY for Microsoft & Apple (Google is completely removed from here!)
             const brand = {
                 Microsoft: { title: 'Sign in to Microsoft', accent: '#0067b8', domain: 'outlook.com' },
                 Apple: { title: 'Sign in with Apple ID', accent: '#0071e3', domain: 'icloud.com' }
             }[provider];
+            if (!brand) return;
+
+            const width = 460, height = 560;
+            const left = Math.round((window.screen.width - width) / 2);
+            const top = Math.round((window.screen.height - height) / 2);
+            const popup = window.open('about:blank', `${provider}SignInPopup`, `width=${width},height=${height},left=${left},top=${top}`);
+            if (!popup) { showToast('Please allow popups to sign in!'); return; }
 
             const savedEmail = localStorage.getItem(`chess_wiz_last_${provider.toLowerCase()}`) || `sidharth@${brand.domain}`;
-
             popup.document.write(`
                 <!DOCTYPE html><html><head><title>${brand.title}</title>
                 <style>
